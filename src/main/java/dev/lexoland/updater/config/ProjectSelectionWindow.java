@@ -108,6 +108,11 @@ public class ProjectSelectionWindow extends JFrame {
 					setPanelEnabled(root, true);
 					return;
 				}
+				if (gameVersions.isEmpty()) {
+					error("Project has no versions available for fabric.");
+					setPanelEnabled(root, true);
+					return;
+				}
 				dispose();
 				GameVersionSelectionWindow window = new GameVersionSelectionWindow(gameVersions, getMinimumSize());
 				window.setVisible(true);

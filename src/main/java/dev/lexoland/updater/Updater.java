@@ -294,10 +294,12 @@ public class Updater {
 			UPDATER_DIR.mkdirs();
 
 		try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(BACKUP_FILE))) {
-			ZipEntry installationInfoEntry = new ZipEntry(INSTALLATION_INFO_FILE.getPath());
-			out.putNextEntry(installationInfoEntry);
-			Files.asByteSource(INSTALLATION_INFO_FILE).copyTo(out);
-			out.closeEntry();
+			if (INSTALLATION_INFO_FILE.exists()) {
+				ZipEntry installationInfoEntry = new ZipEntry(INSTALLATION_INFO_FILE.getPath());
+				out.putNextEntry(installationInfoEntry);
+				Files.asByteSource(INSTALLATION_INFO_FILE).copyTo(out);
+				out.closeEntry();
+			}
 
 			for (String installedFile : previousInstallationInfo.files) {
 				File file = new File(installedFile);
