@@ -39,6 +39,9 @@ public class Config {
 	}
 
 	public static void save() {
+		if (Updater.UPDATER_DIR.exists())
+			Updater.UPDATER_DIR.mkdirs();
+
 		JsonObject config = new JsonObject();
 		config.addProperty("projectId", projectId);
 		config.addProperty("authToken", authToken);
