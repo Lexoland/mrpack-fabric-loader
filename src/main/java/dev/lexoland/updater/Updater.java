@@ -1,6 +1,7 @@
 package dev.lexoland.updater;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -14,6 +15,7 @@ import java.util.List;
 import java.util.stream.StreamSupport;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 
 import com.google.common.collect.ImmutableList;
 import com.google.common.hash.Hashing;
@@ -43,6 +45,7 @@ public class Updater {
 	public static final File USER_CONFIG_FILE = new File(UPDATER_DIR, "config.json");
 	public static final File PACK_FILE = new File(UPDATER_DIR, "pack.mrpack");
 	public static final File INSTALLATION_INFO_FILE = new File(UPDATER_DIR, "installation-info.json");
+	public static final File BACKUP_FILE = new File(UPDATER_DIR, "backup.zip");
 
 	private static final ImmutableList<String> DOWNLOAD_DOMAIN_WHITELIST = ImmutableList.of(
 			"cdn.modrinth.com",
@@ -62,6 +65,7 @@ public class Updater {
 	private long downloadSize;
 	private long downloaded;
 
+	private boolean backupCreated = false;
 	private final InstallationInfo previousInstallationInfo = new InstallationInfo();
 	private final InstallationInfo newInstallationInfo = new InstallationInfo();
 
@@ -111,6 +115,8 @@ public class Updater {
 			}
 			Log.info(LogCategory.UPDATER, "New version found: %s", newVersionNumber);
 
+			createBackup();
+
 			// get primary file
 			JsonObject file = StreamSupport.stream(version.getAsJsonArray("files").spliterator(), false)
 					.map(JsonElement::getAsJsonObject)
@@ -130,7 +136,11 @@ public class Updater {
 			newInstallationInfo.versionNumber = newVersionNumber;
 			saveNewInstallationInfo();
 		} catch (Exception e) {
-			throw new RuntimeException("Failed to update pack", e);
+			Log.error(LogCategory.UPDATER, "Failed to check/update pack", e);
+			if (backupCreated)
+				restoreBackup();
+		} finally {
+			cleanUp();
 		}
 	}
 
@@ -216,8 +226,8 @@ public class Updater {
 				}
 			}
 
-			downloadFile(destination.getName(), downloadUrl, destination);
 			markAsInstalled(destination);
+			downloadFile(destination.getName(), downloadUrl, destination);
 		}
 	}
 
@@ -261,6 +271,9 @@ public class Updater {
 	private void extractOverrideEntry(ZipFile file, ZipEntry entry, String prefixToRemove) throws IOException {
 		File destination = new File(entry.getName().substring(prefixToRemove.length()));
 		String name = destination.getName();
+
+		markAsInstalled(destination);
+
 		if (destination.exists() && alwaysOverrideFiles.stream().noneMatch(name::endsWith))
 			return;
 
@@ -270,16 +283,81 @@ public class Updater {
 		if (parent != null && !parent.exists())
 			parent.mkdirs();
 
-		FileOutputStream out = new FileOutputStream(destination);
+		Files.asByteSink(destination).writeFrom(in);
+	}
 
-		byte[] buffer = new byte[1024];
-		int read;
-		while ((read = in.read(buffer, 0, 1024)) != -1)
-			out.write(buffer, 0, read);
+	@SuppressWarnings("IOStreamConstructor")
+	private void createBackup() throws IOException {
+		Log.info(LogCategory.UPDATER, "Creating backup...");
 
-		out.close();
+		if (!UPDATER_DIR.exists())
+			UPDATER_DIR.mkdirs();
 
-		markAsInstalled(destination);
+		try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(BACKUP_FILE))) {
+			ZipEntry installationInfoEntry = new ZipEntry(INSTALLATION_INFO_FILE.getPath());
+			out.putNextEntry(installationInfoEntry);
+			Files.asByteSource(INSTALLATION_INFO_FILE).copyTo(out);
+			out.closeEntry();
+
+			for (String installedFile : previousInstallationInfo.files) {
+				File file = new File(installedFile);
+				if (!file.exists())
+					continue;
+
+				ZipEntry entry = new ZipEntry(file.getPath());
+				out.putNextEntry(entry);
+				Files.asByteSource(file).copyTo(out);
+				out.closeEntry();
+			}
+		}
+		backupCreated = true;
+	}
+
+	private void restoreBackup() {
+		Log.info(LogCategory.UPDATER, "Restoring backup...");
+
+		// delete all new files
+		for (String installedFile : newInstallationInfo.files) {
+			File file = new File(installedFile);
+
+			if (!file.exists() || previousInstallationInfo.files.contains(installedFile))
+				continue;
+
+			file.delete();
+		}
+
+		// restore backup file
+		try (ZipFile zipFile = new ZipFile(BACKUP_FILE)) {
+			Enumeration<? extends ZipEntry> entries = zipFile.entries();
+
+			while (entries.hasMoreElements()) {
+				ZipEntry entry = entries.nextElement();
+				String entryName = entry.getName();
+
+				if (entry.isDirectory())
+					continue;
+
+				File destination = new File(entryName);
+
+				File parent = destination.getParentFile();
+				if (parent != null && !parent.exists())
+					parent.mkdirs();
+
+				Files.asByteSink(destination).writeFrom(zipFile.getInputStream(entry));
+			}
+		} catch (IOException e) {
+			Log.error(LogCategory.UPDATER, "Failed to restore backup", e);
+		}
+	}
+
+	private void cleanUp() {
+		Log.info(LogCategory.UPDATER, "Cleaning up...");
+
+		if (BACKUP_FILE.exists())
+			BACKUP_FILE.delete();
+
+		if (PACK_FILE.exists())
+			PACK_FILE.delete();
 	}
 
 	private void markAsInstalled(File file) {
