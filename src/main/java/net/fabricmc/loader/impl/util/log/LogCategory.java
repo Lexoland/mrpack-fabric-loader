@@ -31,6 +31,7 @@ public final class LogCategory {
 	public static final LogCategory MOD_REMAP = create("ModRemap");
 	public static final LogCategory MIXIN = create("Mixin");
 	public static final LogCategory RESOLUTION = create("Resolution");
+	public static final LogCategory UPDATER = create("Updater");
 	public static final LogCategory TEST = create("Test");
 
 	public static final String SEPARATOR = "/";
