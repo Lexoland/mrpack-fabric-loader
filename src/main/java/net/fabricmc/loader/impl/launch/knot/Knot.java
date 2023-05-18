@@ -36,6 +36,8 @@ import java.util.stream.Collectors;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
+import dev.lexoland.updater.Updater;
+
 import net.fabricmc.api.EnvType;
 import net.fabricmc.loader.api.entrypoint.PreLaunchEntrypoint;
 import net.fabricmc.loader.impl.FabricLoaderImpl;
@@ -61,20 +63,22 @@ public final class Knot extends FabricLauncherBase {
 	private boolean unlocked;
 
 	public static void launch(String[] args, EnvType type) {
-		setupUncaughtExceptionHandler();
+		Updater.launch(type, () -> {
+			setupUncaughtExceptionHandler();
 
-		try {
-			Knot knot = new Knot(type);
-			ClassLoader cl = knot.init(args);
+			try {
+				Knot knot = new Knot(type);
+				ClassLoader cl = knot.init(args);
 
-			if (knot.provider == null) {
-				throw new IllegalStateException("Game provider was not initialized! (Knot#init(String[]))");
+				if (knot.provider == null) {
+					throw new IllegalStateException("Game provider was not initialized! (Knot#init(String[]))");
+				}
+
+				knot.provider.launch(cl);
+			} catch (FormattedException e) {
+				handleFormattedException(e);
 			}
-
-			knot.provider.launch(cl);
-		} catch (FormattedException e) {
-			handleFormattedException(e);
-		}
+		});
 	}
 
 	public Knot(EnvType type) {

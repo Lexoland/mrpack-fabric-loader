@@ -10,8 +10,6 @@ import java.util.List;
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 
-import com.google.common.collect.MultimapBuilder;
-import com.google.common.collect.SetMultimap;
 import com.google.gson.Gson;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -19,6 +17,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 import dev.lexoland.updater.Updater;
 
+import net.fabricmc.api.EnvType;
 import net.fabricmc.loader.impl.util.log.Log;
 
 import net.fabricmc.loader.impl.util.log.LogCategory;
@@ -34,7 +33,7 @@ public class ProjectSelectionWindow extends JFrame {
 	private JTextField projectIdField;
 	private JPasswordField authTokenField;
 
-	public ProjectSelectionWindow() {
+	public ProjectSelectionWindow(EnvType envType, Runnable onFinish) {
 		super("Select Modrinth Pack");
 
 		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -84,7 +83,7 @@ public class ProjectSelectionWindow extends JFrame {
 		buttonPanel.add(cancelButton);
 
 		JButton okButton = new JButton("OK");
-		okButton.addActionListener(e -> ok(root));
+		okButton.addActionListener(e -> ok(root, envType, onFinish));
 		buttonPanel.add(okButton);
 
 		root.add(buttonPanel, c);
@@ -94,7 +93,7 @@ public class ProjectSelectionWindow extends JFrame {
 		setMinimumSize(getSize());
 	}
 
-	private void ok(JPanel root) {
+	private void ok(JPanel root, EnvType envType, Runnable onFinish) {
 		setPanelEnabled(root, false);
 
 		new Thread(() -> {
@@ -114,7 +113,7 @@ public class ProjectSelectionWindow extends JFrame {
 					return;
 				}
 				dispose();
-				GameVersionSelectionWindow window = new GameVersionSelectionWindow(gameVersions, getMinimumSize());
+				GameVersionSelectionWindow window = new GameVersionSelectionWindow(gameVersions, getMinimumSize(), envType, onFinish);
 				window.setVisible(true);
 			} catch (IOException ex) {
 				Log.error(LogCategory.UPDATER, "Failed to fetch project versions", ex);

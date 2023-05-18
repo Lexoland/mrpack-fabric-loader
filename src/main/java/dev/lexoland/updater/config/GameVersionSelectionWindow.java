@@ -3,6 +3,8 @@ package dev.lexoland.updater.config;
 import com.google.gson.Gson;
 import dev.lexoland.updater.Updater;
 
+import net.fabricmc.api.EnvType;
+
 import javax.swing.*;
 import javax.swing.border.EmptyBorder;
 
@@ -15,7 +17,7 @@ public class GameVersionSelectionWindow extends JFrame {
 
 	private JComboBox<String> gameVersions;
 
-	public GameVersionSelectionWindow(HashSet<String> versions, Dimension size) {
+	public GameVersionSelectionWindow(HashSet<String> versions, Dimension size, EnvType envType, Runnable onFinish) {
 		super("Select Game Version");
 
 		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -58,7 +60,7 @@ public class GameVersionSelectionWindow extends JFrame {
 			Config.gameVersion = (String) gameVersions.getSelectedItem();
 			Config.save();
 			dispose();
-			Updater.start();
+			Updater.start(envType, onFinish);
 		});
 		buttonPanel.add(okButton);
 
