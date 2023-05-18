@@ -1,3 +1,5 @@
+An automatic modpack updater integrated within the fabric loader
+
 fabric-loader
 ===========
 
