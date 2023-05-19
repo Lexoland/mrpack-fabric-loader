@@ -5,6 +5,8 @@ import dev.lexoland.updater.Updater;
 import javax.swing.*;
 
 import java.awt.*;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
@@ -14,68 +16,48 @@ public class UpdateWindow extends JFrame {
 
 	private static UpdateWindow instance;
 
-	static Updater updater;
-
 	private UpdateWindow() {
-		super("Updating..");
+		super("Updating...");
 		setSize(600, 350);
 		setResizable(false);
-		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+		setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		setLocationRelativeTo(null);
 		add(new UpdateRenderer());
-		setVisible(true);
 	}
 
-	public static void setHeader(String header) {
-		UpdateRenderer.setHeader(header);
-	}
+	public static void open() {
+		List<String> fonts = new ArrayList<>();
+		fonts.add("MinecraftRegular.otf");
+		fonts.add("MinecraftBold.otf");
+		fonts.add("MinecraftItalic.otf");
+		fonts.add("MinecraftBoldItalic.otf");
 
-	public static void advanceToStage(UpdateRenderer.ProgressStage stage) {
-		if(stage == UpdateRenderer.ProgressStage.CLOSE) {
-			getInstance().dispose();
-			return;
+		try {
+			GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
+			for (String font : fonts)
+				if (!ge.registerFont(Font.createFont(Font.TRUETYPE_FONT, Objects.requireNonNull(UpdateWindow.class.getResourceAsStream("/fonts/" + font)))))
+					throw new Error("Failed to load fonts");
+		} catch (IOException | FontFormatException | NullPointerException e) {
+			throw new Error("Failed to load fonts", e);
 		}
-		UpdateRenderer.updateStage(stage);
-	}
 
-	public static ProgressBar getBar(int index) {
-		return UpdateRenderer.getBar(index);
-	}
+		instance = new UpdateWindow();
+		instance.setVisible(true);
 
-	public static void error(String s, int code) {
-		UpdateRenderer.error(s);
 		new Thread(() -> {
-			try {
-				Thread.sleep(5000);
-			} catch (InterruptedException e) {
-				e.printStackTrace();
+			while (instance.isVisible()) {
+				instance.repaint();
+				Toolkit.getDefaultToolkit().sync();
 			}
-			System.exit(code);
 		}).start();
 	}
 
 	public static UpdateWindow getInstance() {
-		if(instance == null) {
-			List<String> fonts = new ArrayList<>();
-			fonts.add("MinecraftRegular.otf");
-			fonts.add("MinecraftBold.otf");
-			fonts.add("MinecraftItalic.otf");
-			fonts.add("MinecraftBoldItalic.otf");
-
-			try {
-				GraphicsEnvironment ge = GraphicsEnvironment.getLocalGraphicsEnvironment();
-				for (String font : fonts)
-					if (!ge.registerFont(Font.createFont(Font.TRUETYPE_FONT, Objects.requireNonNull(UpdateWindow.class.getResourceAsStream("/fonts/" + font)))))
-						throw new Error("Failed to load fonts");
-			} catch (IOException | FontFormatException | NullPointerException e) {
-				throw new Error("Failed to load fonts", e);
-			}
-			return instance = new UpdateWindow();
-		}
 		return instance;
 	}
 
-	public static void setUpdater(Updater updater) {
-		UpdateWindow.updater = updater;
+	public static void close() {
+		if (instance != null)
+			instance.dispose();
 	}
 }

@@ -1,5 +1,6 @@
 package dev.lexoland.updater;
 
+import java.awt.*;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.FileReader;
@@ -11,7 +12,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Enumeration;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
@@ -27,9 +28,14 @@ import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 import dev.lexoland.updater.config.Config;
 import dev.lexoland.updater.config.ProjectSelectionWindow;
-import dev.lexoland.updater.rendering.ProgressBar;
 import dev.lexoland.updater.rendering.UpdateRenderer;
 import dev.lexoland.updater.rendering.UpdateWindow;
+import dev.lexoland.updater.rendering.stages.CreateBackupStage;
+import dev.lexoland.updater.rendering.stages.DownloadPackFilesStage;
+import dev.lexoland.updater.rendering.stages.DownloadPackMetaStage;
+import dev.lexoland.updater.rendering.stages.ExtractOverridesStage;
+import dev.lexoland.updater.rendering.stages.FinishUpStage;
+import dev.lexoland.updater.rendering.stages.RestoreBackupStage;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -60,6 +66,8 @@ public class Updater {
 			"gitlab.com"
 	);
 
+	private static Updater instance;
+
 
 	private final OkHttpClient client;
 
@@ -68,11 +76,20 @@ public class Updater {
 	private final Collection<String> alwaysOverrideFiles;
 	private final EnvType environment;
 
+	private String entryName;
+	private int totalEntries;
+	private int currentEntry;
+
 	private long downloadSize;
 	private long downloaded;
 
+	private long downloadSpeed;
+	private long downloadSpeedTimestamp;
+	private long downloadSpeedCounter;
+
+	private boolean startGame = true;
 	private boolean backupCreated = false;
-	private boolean needsCleanup = true;
+	private boolean needsCleanup = false;
 	private final InstallationInfo previousInstallationInfo = new InstallationInfo();
 	private final InstallationInfo newInstallationInfo = new InstallationInfo();
 
@@ -104,7 +121,6 @@ public class Updater {
 
 		try (Response response = client.newCall(request).execute()) {
 			if (!response.isSuccessful()) {
-				needsCleanup = false;
 				throw new IOException("Unexpected code " + response);
 			}
 
@@ -112,7 +128,6 @@ public class Updater {
 
 			if (versions.size() == 0) {
 				Log.warn(LogCategory.UPDATER, "No versions found");
-				needsCleanup = false;
 				return;
 			}
 
@@ -121,25 +136,23 @@ public class Updater {
 
 			if (newVersionNumber.equals(currentVersionNumber)) {
 				Log.info(LogCategory.UPDATER, "Pack is up to date");
-				needsCleanup = false;
 				return;
 			}
 			Log.info(LogCategory.UPDATER, "New version found: %s", newVersionNumber);
 
+			UpdateWindow.open();
+
+			needsCleanup = true;
 			createBackup();
 
-			UpdateWindow.setHeader("Downloading..");
-			UpdateWindow.advanceToStage(UpdateRenderer.ProgressStage.DOWNLOADING_PACK_META);
-
 			// get primary file
+			UpdateRenderer.setStage(new DownloadPackMetaStage(this));
+
 			JsonObject file = StreamSupport.stream(version.getAsJsonArray("files").spliterator(), false)
 					.map(JsonElement::getAsJsonObject)
 					.filter(f -> f.get("primary").getAsBoolean())
 					.findAny()
-					.orElseThrow(() -> {
-						UpdateWindow.error("No primary file found", -101);
-						return new RuntimeException("No primary file found");
-					});
+					.orElseThrow(() -> new RuntimeException("No primary file found"));
 
 			String fileName = file.get("filename").getAsString();
 			String downloadUrl = file.get("url").getAsString();
@@ -148,24 +161,32 @@ public class Updater {
 			downloadPackFiles();
 			extractOverrides();
 
+			UpdateRenderer.setStage(new FinishUpStage(this, "Deleting Removed Pack Files...", 0, 3));
 			deleteRemovedPackFiles();
 
+			UpdateRenderer.setStage(new FinishUpStage(this, "Saving Installation Info...", 1, 3));
 			newInstallationInfo.versionNumber = newVersionNumber;
 			saveNewInstallationInfo();
 		} catch (Exception e) {
-			Log.error(LogCategory.UPDATER, "Failed to check/update pack", e);
-			if (backupCreated) {
+			Log.error(LogCategory.UPDATER, "Failed to check/update pack.", e);
+			showUpdateFailedOptionPane(e);
+
+			if (backupCreated)
 				restoreBackup();
-			} else UpdateWindow.error("Failed to check/update pack", -103);
 		} finally {
-			if(needsCleanup)
+			if(needsCleanup) {
+				UpdateRenderer.setStage(new FinishUpStage(this, "Deleting Cache...", 2, 3));
 				cleanUp();
+				UpdateRenderer.setStage(new FinishUpStage(this, "Deleting Cache...", 3, 3));
+			}
+			UpdateWindow.close();
 		}
 	}
 
 
 	private void downloadFile(String fileName, HttpUrl downloadUrl, File destination, boolean meta) throws IOException {
 		Log.info(LogCategory.UPDATER, "Downloading '%s'...", fileName);
+		entryName = fileName;
 
 		File parent = destination.getParentFile();
 		if (parent != null && !parent.exists())
@@ -177,19 +198,12 @@ public class Updater {
 				.build();
 
 		try (Response response = client.newCall(request).execute()) {
-			if (!response.isSuccessful()) {
-				UpdateWindow.error("Failed to download file", response.code());
-				throw new IOException("Unexpected code " + response);
-			}
+			if (!response.isSuccessful())
+				throw new IOException("Unexpected response code " + response);
 
 			ResponseBody body = response.body();
 			downloadSize = body.contentLength();
 			downloaded = 0;
-			ProgressBar bar = UpdateWindow.getBar(0)
-					.status(Lazy.of(() -> String.format("Downloading %s..", fileName)))
-					.rightText(Lazy.of(() -> downloaded), Lazy.of(() -> downloadSize));
-			if(!meta)
-				bar.leftText(Lazy.of(() -> String.format("From: %s", downloadUrl)));
 
 			InputStream in = body.byteStream();
 			FileOutputStream out = new FileOutputStream(destination);
@@ -197,48 +211,36 @@ public class Updater {
 			byte[] buffer = new byte[1024];
 			int read;
 
-			final AtomicBoolean downloading = new AtomicBoolean(true);
-			new Thread(() -> {
-				long prevDownloaded = 0;
-				ProgressBar progressBar = UpdateWindow.getBar(meta ? 0 : 1);
-				while(downloading.get()) {
-					try {
-						Thread.sleep(1000);
-					} catch (InterruptedException e) {
-						throw new RuntimeException(e);
-					}
-					long finalPrevDownloaded = prevDownloaded;
-					progressBar.leftText(Lazy.of(() -> String.format("%.2f MB/s", (downloaded - finalPrevDownloaded) / 1024.0 / 1024.0)));
-					prevDownloaded = downloaded;
-				}
-			}, "Download-Analyser").start();
-
 			while ((read = in.read(buffer, 0, 1024)) != -1) {
 				out.write(buffer, 0, read);
 				downloaded += read;
-				bar.progress((float) downloaded / downloadSize)
-					.rightText(Lazy.of(() -> downloaded), Lazy.of(() -> downloadSize));
+				downloadSpeedCounter += read;
+
+				long now = System.currentTimeMillis();
+				if(now - downloadSpeedTimestamp > 1000) {
+					downloadSpeedTimestamp = now;
+					downloadSpeed = downloadSpeedCounter;
+					downloadSpeedCounter = 0;
+				}
 			}
-			downloading.set(false);
+
 			out.close();
 		}
 	}
 
 	private void downloadPackFiles() throws IOException {
 		Log.info(LogCategory.UPDATER, "Downloading pack files...");
-		UpdateWindow.setHeader("Downloading..");
-		UpdateWindow.advanceToStage(UpdateRenderer.ProgressStage.DOWNLOADING_PACK_FILES);
+
+		UpdateRenderer.setStage(new DownloadPackFilesStage(this));
 
 		JsonObject index = getPackIndex();
 		JsonArray files = index.getAsJsonArray("files");
 
-		ProgressBar bar = UpdateWindow.getBar(1).status(Lazy.of(() -> "Downloading files..."));
+		totalEntries = files.size();
+		currentEntry = 0;
 
-		for (int i = 0; i < files.size(); i++) {
-			JsonObject file = files.get(0).getAsJsonObject();
-			int finalI = i;
-			bar.progress((float) i / files.size() - 1)
-				.rightText(Lazy.of(() -> finalI + "/" + files.size()));
+		for (JsonElement element : files) {
+			JsonObject file = element.getAsJsonObject();
 
 			JsonObject env = file.getAsJsonObject("env");
 			if (env != null) {
@@ -254,7 +256,6 @@ public class Updater {
 			String path = file.get("path").getAsString();
 			if (path.contains("..") || path.matches("^([A-Z]:/|[A-Z]:\\\\|/|\\\\)")) {
 				Log.warn(LogCategory.UPDATER, "Skipping file '%s' because it has an invalid path", path);
-				bar.leftText(Lazy.of(() -> "Skipping file '" + path + "' because it has an invalid path"));
 				continue;
 			}
 			File destination = new File(path);
@@ -265,7 +266,6 @@ public class Updater {
 			HttpUrl downloadUrl = HttpUrl.get(downloads.get(0).getAsString());
 			if (!DOWNLOAD_DOMAIN_WHITELIST.contains(downloadUrl.host())) {
 				Log.warn(LogCategory.UPDATER, "Skipping file '%s' because it is hosted on an invalid domain (%s)", path, downloadUrl.host());
-				bar.leftText(Lazy.of(() -> "Skipping file '" + path + "' because it is hosted on an invalid domain (" + downloadUrl.host() + ")"));
 				continue;
 			}
 
@@ -275,24 +275,20 @@ public class Updater {
 				String localHash = Files.asByteSource(destination).hash(Hashing.sha512()).toString();
 				if (localHash.equals(hash)) {
 					markAsInstalled(destination);
+					currentEntry++;
 					continue;
 				}
 			}
 
 			markAsInstalled(destination);
 			downloadFile(destination.getName(), downloadUrl, destination, false);
+			currentEntry++;
 		}
 	}
 
 	private void deleteRemovedPackFiles() {
-		UpdateWindow.setHeader("Cleaning up...");
-		UpdateWindow.advanceToStage(UpdateRenderer.ProgressStage.CLEANUP);
-		ProgressBar bar = UpdateWindow.getBar(0).status(Lazy.of(() -> "Deleting removed files..."));
 		for (int i = 0; i < previousInstallationInfo.files.size(); i++) {
 			String installedFile = previousInstallationInfo.files.get(i);
-			int finalI = i;
-			bar.progress((float) i / previousInstallationInfo.files.size() - 1)
-				.rightText(Lazy.of(() -> finalI + "/" + previousInstallationInfo.files.size()));
 			if (newInstallationInfo.files.contains(installedFile))
 				continue;
 
@@ -307,24 +303,21 @@ public class Updater {
 
 	private void extractOverrides() throws IOException {
 		Log.info(LogCategory.UPDATER, "Extracting overrides...");
-		UpdateWindow.setHeader("Extracting overrides...");
-		UpdateWindow.advanceToStage(UpdateRenderer.ProgressStage.EXTRACT_OVERRIDES);
+		UpdateRenderer.setStage(new ExtractOverridesStage(this));
+
 
 		try (ZipFile zipFile = new ZipFile(PACK_FILE)) {
-			Enumeration<? extends ZipEntry> entries = zipFile.entries();
-			ProgressBar bar = UpdateWindow.getBar(0).status(Lazy.of(() -> "Extracting files..."))
-					.rightText(Lazy.of(() -> "0/" + zipFile.size()));
+			totalEntries = zipFile.size();
+			currentEntry = 0;
 
-			int i = 0;
-			int zipSize = zipFile.size();
+			Enumeration<? extends ZipEntry> entries = zipFile.entries();
+
 			while (entries.hasMoreElements()) {
-				int finalI = ++i;
 				ZipEntry entry = entries.nextElement();
 				String entryName = entry.getName();
 
 				if (entry.isDirectory()) {
-					bar.progress((float) i / zipSize)
-						.rightText(Lazy.of(() -> finalI + "/" + zipSize));
+					currentEntry++;
 					continue;
 				}
 
@@ -334,14 +327,18 @@ public class Updater {
 					extractOverrideEntry(zipFile, entry, "client-overrides/");
 				else if (entryName.startsWith("server-overrides/") && environment == EnvType.SERVER)
 					extractOverrideEntry(zipFile, entry, "server-overrides/");
-				bar.progress((float) i / zipFile.size())
-						.rightText(Lazy.of(() -> finalI + "/" + zipSize));
+
+				currentEntry++;
 			}
 		}
 	}
 
 	private void extractOverrideEntry(ZipFile file, ZipEntry entry, String prefixToRemove) throws IOException {
-		File destination = new File(entry.getName().substring(prefixToRemove.length()));
+		String destinationPath = entry.getName().substring(prefixToRemove.length());
+
+		entryName = destinationPath;
+
+		File destination = new File(destinationPath);
 		String name = destination.getName();
 
 		markAsInstalled(destination);
@@ -361,29 +358,32 @@ public class Updater {
 	@SuppressWarnings("IOStreamConstructor")
 	private void createBackup() throws IOException {
 		Log.info(LogCategory.UPDATER, "Creating backup...");
-		UpdateWindow.setHeader("Creating backup...");
-		UpdateWindow.advanceToStage(UpdateRenderer.ProgressStage.CREATE_BACKUP);
+		UpdateRenderer.setStage(new CreateBackupStage(this));
+
+		totalEntries = previousInstallationInfo.files.size() + 1;
+		currentEntry = 0;
 
 		if (!UPDATER_DIR.exists())
 			UPDATER_DIR.mkdirs();
 
 		try (ZipOutputStream out = new ZipOutputStream(new FileOutputStream(BACKUP_FILE))) {
+
 			if (INSTALLATION_INFO_FILE.exists()) {
+				entryName = INSTALLATION_INFO_FILE.getPath();
+
 				ZipEntry installationInfoEntry = new ZipEntry(INSTALLATION_INFO_FILE.getPath());
 				out.putNextEntry(installationInfoEntry);
 				Files.asByteSource(INSTALLATION_INFO_FILE).copyTo(out);
 				out.closeEntry();
-			}
 
-			ProgressBar bar = UpdateWindow.getBar(0);
-			bar.progress(0);
+				currentEntry++;
+			}
 
 			for (int i = 0; i < previousInstallationInfo.files.size(); i++) {
 				String installedFile = previousInstallationInfo.files.get(i);
-				int finalI = i;
-				bar.status(Lazy.of(() -> "Backing up " + installedFile))
-						.progress((float) i / previousInstallationInfo.files.size() - 1)
-						.rightText(Lazy.of(() -> String.format("Backing up.. %d/%d", finalI, previousInstallationInfo.files.size())));
+
+				entryName = installedFile;
+
 				File file = new File(installedFile);
 				if (!file.exists())
 					continue;
@@ -392,6 +392,8 @@ public class Updater {
 				out.putNextEntry(entry);
 				Files.asByteSource(file).copyTo(out);
 				out.closeEntry();
+
+				currentEntry++;
 			}
 		}
 		backupCreated = true;
@@ -399,43 +401,42 @@ public class Updater {
 
 	private void restoreBackup() {
 		Log.info(LogCategory.UPDATER, "Restoring backup...");
-		UpdateWindow.setHeader("Error! Restoring backup...");
-		UpdateWindow.advanceToStage(UpdateRenderer.ProgressStage.RESTORING_BACKUP);
-
-		ProgressBar bar = UpdateWindow.getBar(0).status(Lazy.of(() -> "Deleting new files..."))
-				.rightText(Lazy.of(() -> "0/" + previousInstallationInfo.files.size()));
 
 		// delete all new files
-		for (int i = 0; i < newInstallationInfo.files.size(); i++) {
-			int finalI = i;
-			bar.progress((float) i / newInstallationInfo.files.size() - 1)
-					.rightText(Lazy.of(() -> finalI + "/" + newInstallationInfo.files.size()));
-			String installedFile = newInstallationInfo.files.get(i);
-			File file = new File(installedFile);
+		UpdateRenderer.setStage(new RestoreBackupStage(this, false));
 
-			if (!file.exists() || previousInstallationInfo.files.contains(installedFile))
-				continue;
+		List<File> toDelete = newInstallationInfo.files.stream()
+				.filter(file -> !previousInstallationInfo.files.contains(file))
+				.map(File::new)
+				.filter(File::exists)
+				.collect(Collectors.toList());
 
+		totalEntries = toDelete.size();
+		currentEntry = 0;
+
+		for (File file : toDelete) {
 			file.delete();
+			currentEntry++;
 		}
 
-		bar.status(Lazy.of(() -> "Restoring backup files..")).progress(0).rightText(Lazy.of(() -> ""));
 
 		// restore backup file
-		try (ZipFile zipFile = new ZipFile(BACKUP_FILE)) {
-			Enumeration<? extends ZipEntry> entries = zipFile.entries();
-			bar.rightText(Lazy.of(() -> "0/" + zipFile.size()));
+		UpdateRenderer.setStage(new RestoreBackupStage(this, false));
 
-			int zipSize = zipFile.size();
-			int i = 0;
+		try (ZipFile zipFile = new ZipFile(BACKUP_FILE)) {
+
+			totalEntries = zipFile.size();
+			currentEntry = 0;
+
+			Enumeration<? extends ZipEntry> entries = zipFile.entries();
+
+
 			while (entries.hasMoreElements()) {
-				int finalI = ++i;
 				ZipEntry entry = entries.nextElement();
 				String entryName = entry.getName();
 
 				if (entry.isDirectory()) {
-					bar.progress((float) i / zipSize)
-							.rightText(Lazy.of(() -> finalI + "/" + zipSize));
+					currentEntry++;
 					continue;
 				}
 
@@ -446,29 +447,22 @@ public class Updater {
 					parent.mkdirs();
 
 				Files.asByteSink(destination).writeFrom(zipFile.getInputStream(entry));
-				bar.progress((float) i / zipSize)
-						.rightText(Lazy.of(() -> finalI + "/" + zipSize));
+
+				currentEntry++;
 			}
-			UpdateWindow.advanceToStage(UpdateRenderer.ProgressStage.CLOSE);
 		} catch (IOException e) {
-			Log.error(LogCategory.UPDATER, "Failed to restore backup", e);
-			UpdateWindow.setHeader("Failed to restore backup!");
-			UpdateWindow.error("Failed to restore backup!", -100);
+			Log.error(LogCategory.UPDATER, "Failed to restore backup.", e);
 		}
 	}
 
 	private void cleanUp() {
 		Log.info(LogCategory.UPDATER, "Cleaning up...");
-		UpdateWindow.advanceToStage(UpdateRenderer.ProgressStage.CLEANUP);
-		UpdateWindow.getBar(0).status(Lazy.of(() -> "Cleaning up..."))
-				.progress(1);
 
 		if (BACKUP_FILE.exists())
 			BACKUP_FILE.delete();
 
 		if (PACK_FILE.exists())
 			PACK_FILE.delete();
-		UpdateWindow.advanceToStage(UpdateRenderer.ProgressStage.CLOSE);
 	}
 
 	private void markAsInstalled(File file) {
@@ -484,20 +478,18 @@ public class Updater {
 			previousInstallationInfo.versionNumber = installationInfoObject.get("version").getAsString();
 			previousInstallationInfo.files = GSON.fromJson(installationInfoObject.get("files"), new TypeToken<ArrayList<String>>() {}.getType());
 		} catch (IOException e) {
-			throw new RuntimeException("Failed to load installation info", e);
+			throw new RuntimeException("Failed to load installation info.", e);
 		}
 	}
 
 	private void saveNewInstallationInfo() {
-		UpdateWindow.getBar(0).status(Lazy.of(() -> "Saving installation info...")).rightText(Lazy.of(() -> ""));
 		try (FileWriter writer = new FileWriter(INSTALLATION_INFO_FILE)) {
 			JsonObject installationInfoObject = new JsonObject();
 			installationInfoObject.addProperty("version", newInstallationInfo.versionNumber);
 			installationInfoObject.add("files", GSON.toJsonTree(newInstallationInfo.files));
 			GSON.toJson(installationInfoObject, writer);
 		} catch (IOException e) {
-			UpdateWindow.error("Failed to save installation info!", -104);
-			throw new RuntimeException("Failed to save installation info", e);
+			throw new RuntimeException("Failed to save installation info.", e);
 		}
 	}
 
@@ -515,8 +507,51 @@ public class Updater {
 				return GSON.fromJson(reader, JsonObject.class);
 			}
 		}
-		UpdateWindow.error("No modrinth.index.json found in pack!", -105);
-		throw new RuntimeException("No modrinth.index.json found in pack");
+		throw new RuntimeException("No modrinth.index.json found in pack.");
+	}
+
+	private void showUpdateFailedOptionPane(Exception e) {
+		Toolkit.getDefaultToolkit().beep();
+
+		String exceptionMessage = e.getMessage() == null ? "" : e.getMessage();
+		String message = backupCreated
+				? "\n\nA backup of your previous installation will be restored.\nDo you want to start the game anyway after the\nrestore has been completed?"
+				: "\n\nDo you want to start the game anyway?";
+
+		int selection = JOptionPane.showConfirmDialog(
+				UpdateWindow.getInstance(),
+				exceptionMessage + message,
+				"Update Failed",
+				JOptionPane.YES_NO_OPTION,
+				JOptionPane.ERROR_MESSAGE
+		);
+
+		if (selection == JOptionPane.NO_OPTION)
+			startGame = false;
+	}
+
+	public int getTotalEntries() {
+		return totalEntries;
+	}
+
+	public int getCurrentEntry() {
+		return currentEntry;
+	}
+
+	public long getDownloaded() {
+		return downloaded;
+	}
+
+	public long getDownloadSize() {
+		return downloadSize;
+	}
+
+	public long getDownloadSpeed() {
+		return downloadSpeed;
+	}
+
+	public String getEntryName() {
+		return entryName;
 	}
 
 	private static class InstallationInfo {
@@ -544,10 +579,10 @@ public class Updater {
 	}
 
 	public static void start(EnvType envType, Runnable onFinish) {
-		Updater updater = new Updater(Config.projectId, Config.gameVersion, Config.authToken, Config.alwaysOverrideFiles, envType);
-		UpdateWindow.setUpdater(updater);
-		updater.checkForUpdates();
-		onFinish.run();
+		instance = new Updater(Config.projectId, Config.gameVersion, Config.authToken, Config.alwaysOverrideFiles, envType);
+		instance.checkForUpdates();
+		if (instance.startGame)
+			onFinish.run();
 	}
 
 	public static OkHttpClient createHttpClient(String authToken) {
@@ -559,5 +594,9 @@ public class Updater {
 						builder.addHeader("Authorization", authToken);
 					return chain.proceed(builder.build());
 				}).build();
+	}
+
+	public static Updater getInstance() {
+		return instance;
 	}
 }

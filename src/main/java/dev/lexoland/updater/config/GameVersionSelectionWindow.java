@@ -60,7 +60,9 @@ public class GameVersionSelectionWindow extends JFrame {
 			Config.gameVersion = (String) gameVersions.getSelectedItem();
 			Config.save();
 			dispose();
-			Updater.start(envType, onFinish);
+
+			new Thread(() -> Updater.start(envType, onFinish))
+					.start();
 		});
 		buttonPanel.add(okButton);
 
