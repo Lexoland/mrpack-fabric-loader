@@ -80,7 +80,7 @@ public class Updater {
 	private int totalEntries;
 	private int currentEntry;
 
-	private long downloadSize;
+	private long downloadSize = 1;
 	private long downloaded;
 
 	private long downloadSpeed;

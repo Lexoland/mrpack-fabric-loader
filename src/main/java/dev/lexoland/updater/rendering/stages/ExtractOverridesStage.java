@@ -6,6 +6,8 @@ import java.awt.*;
 
 public class ExtractOverridesStage extends UpdateStage {
 
+	private final ProgressBar progressBar = new ProgressBar();
+
 	public ExtractOverridesStage(Updater updater) {
 		super(updater, "Extracting Overrides...");
 	}
@@ -14,7 +16,7 @@ public class ExtractOverridesStage extends UpdateStage {
 	public void render(Graphics2D graphics) {
 		super.render(graphics);
 
-		renderProgressBar(
+		progressBar.renderProgressBar(
 				graphics, middleY() - PROGRESS_BAR_HEIGHT / 2,
 				(double) currentEntry() / totalEntries(),
 				"Extracting " + entryName() + "...", null, currentEntry() + "/" + totalEntries()

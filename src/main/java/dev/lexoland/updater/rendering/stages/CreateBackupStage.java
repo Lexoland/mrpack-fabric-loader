@@ -6,6 +6,8 @@ import java.awt.*;
 
 public class CreateBackupStage extends UpdateStage {
 
+	private final ProgressBar progressBar = new ProgressBar();
+
 	public CreateBackupStage(Updater updater) {
 		super(updater, "Creating Backup...");
 	}
@@ -14,7 +16,7 @@ public class CreateBackupStage extends UpdateStage {
 	public void render(Graphics2D graphics) {
 		super.render(graphics);
 
-		renderProgressBar(
+		progressBar.renderProgressBar(
 				graphics, middleY() - PROGRESS_BAR_HEIGHT / 2,
 				(double) currentEntry() / totalEntries(),
 				"Zipping " + entryName(), null, currentEntry() + "/" + totalEntries()

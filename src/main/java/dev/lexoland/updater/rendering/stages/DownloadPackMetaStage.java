@@ -6,6 +6,8 @@ import java.awt.*;
 
 public class DownloadPackMetaStage extends UpdateStage {
 
+	private final ProgressBar progressBar = new ProgressBar();
+
 	public DownloadPackMetaStage(Updater updater) {
 		super(updater, "Downloading...");
 	}
@@ -14,7 +16,7 @@ public class DownloadPackMetaStage extends UpdateStage {
 	public void render(Graphics2D graphics) {
 		super.render(graphics);
 
-		renderProgressBar(
+		progressBar.renderProgressBar(
 				graphics, middleY() - PROGRESS_BAR_HEIGHT / 2,
 				(double) downloaded() / downloadSize(),
 				"Downloading Pack Meta...", downloadSpeedFormatted(), downloadProgressFormatted()

@@ -67,65 +67,6 @@ public class UpdateStage {
 		);
 	}
 
-	protected void renderProgressBar(
-			Graphics2D graphics, int y,
-			double progress,
-			String status, String leftText, String rightText
-	) {
-		int x = (screenWidth - PROGRESS_BAR_WIDTH) / 2;
-
-		// sub status
-		graphics.setColor(Color.WHITE);
-		graphics.setFont(PROGRESS_BAR_SUB_STATUS_FONT);
-
-		if (leftText != null)
-			graphics.drawString(
-					leftText,
-					x, y + graphics.getFontMetrics().getHeight() + PROGRESS_BAR_HEIGHT
-			);
-		if (rightText != null)
-			graphics.drawString(
-					rightText,
-					x + PROGRESS_BAR_WIDTH - graphics.getFontMetrics().stringWidth(rightText),
-					y + graphics.getFontMetrics().getHeight() + PROGRESS_BAR_HEIGHT
-			);
-
-		// status
-		if (status != null) {
-			FontMetrics metrics = graphics.getFontMetrics();
-
-			int statusWidth = 0;
-			for (int i = 0; i < status.length(); i++) {
-				statusWidth += metrics.charWidth(status.charAt(i));
-
-				if (statusWidth < PROGRESS_BAR_WIDTH)
-					continue;
-
-				status = status.substring(0, Math.max(i - 2, 0)) + "...";
-				break;
-			}
-
-			graphics.setFont(PROGRESS_BAR_STATUS_FONT);
-			graphics.drawString(status, x, y - graphics.getFontMetrics().getHeight() / 2);
-		}
-
-		// progress bar
-		graphics.setStroke(new BasicStroke(PROGRESS_BAR_STROKE_WIDTH - 2));
-
-		graphics.drawRect(
-				x, y,
-				PROGRESS_BAR_WIDTH,
-				PROGRESS_BAR_HEIGHT
-		);
-
-		graphics.fillRect(
-				(int) (x + PROGRESS_BAR_STROKE_WIDTH),
-				(int) (y + PROGRESS_BAR_STROKE_WIDTH),
-				(int) ((PROGRESS_BAR_WIDTH - PROGRESS_BAR_STROKE_WIDTH * 2 + 1) * progress),
-				PROGRESS_BAR_HEIGHT - (int) (PROGRESS_BAR_STROKE_WIDTH * 2)
-		);
-	}
-
 	public void setScreenSize(int width, int height) {
 		this.screenWidth = width;
 		this.screenHeight = height;
@@ -174,5 +115,81 @@ public class UpdateStage {
 
 	protected String entryName() {
 		return updater.getEntryName();
+	}
+
+	class ProgressBar {
+
+		private long lastTime = System.currentTimeMillis();
+		private double smoothedProgress;
+
+		protected void renderProgressBar(
+				Graphics2D graphics, int y,
+				double progress,
+				String status, String leftText, String rightText
+		) {
+			int x = (screenWidth - PROGRESS_BAR_WIDTH) / 2;
+
+			// sub status
+			graphics.setColor(Color.WHITE);
+			graphics.setFont(PROGRESS_BAR_SUB_STATUS_FONT);
+
+			if (leftText != null)
+				graphics.drawString(
+						leftText,
+						x, y + graphics.getFontMetrics().getHeight() + PROGRESS_BAR_HEIGHT
+				);
+			if (rightText != null)
+				graphics.drawString(
+						rightText,
+						x + PROGRESS_BAR_WIDTH - graphics.getFontMetrics().stringWidth(rightText),
+						y + graphics.getFontMetrics().getHeight() + PROGRESS_BAR_HEIGHT
+				);
+
+			// status
+			if (status != null) {
+				FontMetrics metrics = graphics.getFontMetrics();
+
+				int statusWidth = 0;
+				for (int i = 0; i < status.length(); i++) {
+					statusWidth += metrics.charWidth(status.charAt(i));
+
+					if (statusWidth < PROGRESS_BAR_WIDTH)
+						continue;
+
+					status = status.substring(0, Math.max(i - 2, 0)) + "...";
+					break;
+				}
+
+				graphics.setFont(PROGRESS_BAR_STATUS_FONT);
+				graphics.drawString(status, x, y - graphics.getFontMetrics().getHeight() / 2);
+			}
+
+			// smooth progress
+			long now = System.currentTimeMillis();
+			if (smoothedProgress >= progress) {
+				smoothedProgress = progress;
+			} else smoothedProgress += 18 * (progress - smoothedProgress) * (now - lastTime) / 1000.0;
+			lastTime = now;
+
+			// progress bar
+			graphics.setStroke(new BasicStroke(PROGRESS_BAR_STROKE_WIDTH - 2));
+
+			graphics.drawRect(
+					x, y,
+					PROGRESS_BAR_WIDTH,
+					PROGRESS_BAR_HEIGHT
+			);
+
+			graphics.fillRect(
+					(int) (x + PROGRESS_BAR_STROKE_WIDTH),
+					(int) (y + PROGRESS_BAR_STROKE_WIDTH),
+					(int) ((PROGRESS_BAR_WIDTH - PROGRESS_BAR_STROKE_WIDTH * 2 + 1) * smoothedProgress),
+					PROGRESS_BAR_HEIGHT - (int) (PROGRESS_BAR_STROKE_WIDTH * 2)
+			);
+		}
+
+		private double lerp(float delta, double start, double end) {
+			return start + delta * (end - start);
+		}
 	}
 }
