@@ -187,6 +187,7 @@ public class Updater {
 	private void downloadFile(String fileName, HttpUrl downloadUrl, File destination, boolean meta) throws IOException {
 		Log.info(LogCategory.UPDATER, "Downloading '%s'...", fileName);
 		entryName = fileName;
+		downloaded = 0;
 
 		File parent = destination.getParentFile();
 		if (parent != null && !parent.exists())
@@ -203,7 +204,6 @@ public class Updater {
 
 			ResponseBody body = response.body();
 			downloadSize = body.contentLength();
-			downloaded = 0;
 
 			InputStream in = body.byteStream();
 			FileOutputStream out = new FileOutputStream(destination);
@@ -559,7 +559,7 @@ public class Updater {
 		private List<String> files = new ArrayList<>();
 	}
 
-	public static void launch(EnvType envType, Runnable onFinish) {
+	public static void launch(EnvType envType, String gameVersion, Runnable onFinish) {
 		Log.finishBuiltinConfig();
 
 		try {
@@ -571,15 +571,15 @@ public class Updater {
 		Config.load();
 
 		if (Config.shouldAskForProject()) {
-			ProjectSelectionWindow window = new ProjectSelectionWindow(envType, onFinish);
+			ProjectSelectionWindow window = new ProjectSelectionWindow(envType, gameVersion, onFinish);
 			window.setVisible(true);
 			return;
 		}
-		start(envType, onFinish);
+		start(envType, gameVersion, onFinish);
 	}
 
-	public static void start(EnvType envType, Runnable onFinish) {
-		instance = new Updater(Config.projectId, Config.gameVersion, Config.authToken, Config.alwaysOverrideFiles, envType);
+	public static void start(EnvType envType, String gameVersion, Runnable onFinish) {
+		instance = new Updater(Config.projectId, gameVersion, Config.authToken, Config.alwaysOverrideFiles, envType);
 		instance.checkForUpdates();
 		if (instance.startGame)
 			onFinish.run();

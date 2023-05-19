@@ -63,11 +63,16 @@ public final class Knot extends FabricLauncherBase {
 	private boolean unlocked;
 
 	public static void launch(String[] args, EnvType type) {
-		Updater.launch(type, () -> {
+		Log.finishBuiltinConfig();
+
+		Knot knot = new Knot(type);
+		knot.loadClassPaths();
+		knot.provider = knot.createGameProvider(args);
+
+		Updater.launch(type, knot.provider.getRawGameVersion(), () -> {
 			setupUncaughtExceptionHandler();
 
 			try {
-				Knot knot = new Knot(type);
 				ClassLoader cl = knot.init(args);
 
 				if (knot.provider == null) {
@@ -105,34 +110,9 @@ public final class Knot extends FabricLauncherBase {
 			}
 		}
 
-		classPath.clear();
-
-		List<String> missing = null;
-		List<String> unsupported = null;
-
-		for (String cpEntry : System.getProperty("java.class.path").split(File.pathSeparator)) {
-			if (cpEntry.equals("*") || cpEntry.endsWith(File.separator + "*")) {
-				if (unsupported == null) unsupported = new ArrayList<>();
-				unsupported.add(cpEntry);
-				continue;
-			}
-
-			Path path = Paths.get(cpEntry);
-
-			if (!Files.exists(path)) {
-				if (missing == null) missing = new ArrayList<>();
-				missing.add(cpEntry);
-				continue;
-			}
-
-			classPath.add(LoaderUtil.normalizeExistingPath(path));
-		}
-
-		if (unsupported != null) Log.warn(LogCategory.KNOT, "Knot does not support wildcard class path entries: %s - the game may not load properly!", String.join(", ", unsupported));
-		if (missing != null) Log.warn(LogCategory.KNOT, "Class path entries reference missing files: %s - the game may not load properly!", String.join(", ", missing));
+		loadClassPaths();
 
 		provider = createGameProvider(args);
-		Log.finishBuiltinConfig();
 		Log.info(LogCategory.GAME_PROVIDER, "Loading %s %s with Fabric Loader %s", provider.getGameName(), provider.getRawGameVersion(), FabricLoaderImpl.VERSION);
 
 		isDevelopment = Boolean.parseBoolean(System.getProperty(SystemProperties.DEVELOPMENT, "false"));
@@ -169,6 +149,36 @@ public final class Knot extends FabricLauncherBase {
 		}
 
 		return cl;
+	}
+
+	private void loadClassPaths() {
+		classPath.clear();
+
+		List<String> missing = null;
+		List<String> unsupported = null;
+
+		for (String cpEntry : System.getProperty("java.class.path").split(File.pathSeparator)) {
+			if (cpEntry.equals("*") || cpEntry.endsWith(File.separator + "*")) {
+				if (unsupported == null) unsupported = new ArrayList<>();
+				unsupported.add(cpEntry);
+				continue;
+			}
+
+			Path path = Paths.get(cpEntry);
+
+			if (!Files.exists(path)) {
+				if (missing == null) missing = new ArrayList<>();
+				missing.add(cpEntry);
+				continue;
+			}
+
+			classPath.add(LoaderUtil.normalizeExistingPath(path));
+		}
+
+		if (unsupported != null)
+			Log.warn(LogCategory.KNOT, "Knot does not support wildcard class path entries: %s - the game may not load properly!", String.join(", ", unsupported));
+		if (missing != null)
+			Log.warn(LogCategory.KNOT, "Class path entries reference missing files: %s - the game may not load properly!", String.join(", ", missing));
 	}
 
 	private GameProvider createGameProvider(String[] args) {

@@ -17,7 +17,6 @@ public class Config {
 
 	public static String projectId;
 	public static String authToken;
-	public static String gameVersion;
 	public static List<String> alwaysOverrideFiles = Collections.singletonList(".jar");
 
 	public static void load() {
@@ -28,7 +27,6 @@ public class Config {
 			JsonObject config = GSON.fromJson(reader, JsonObject.class);
 			projectId = config.has("projectId") ? config.get("projectId").getAsString() : null;
 			authToken = config.has("authToken") ? config.get("authToken").getAsString() : null;
-			gameVersion = config.has("gameVersion") ? config.get("gameVersion").getAsString() : null;
 			alwaysOverrideFiles = GSON.fromJson(
 					config.has("alwaysOverrideFiles") ? config.get("alwaysOverrideFiles") : null,
 					new TypeToken<ArrayList<String>>() {}.getType()
@@ -45,7 +43,6 @@ public class Config {
 		JsonObject config = new JsonObject();
 		config.addProperty("projectId", projectId);
 		config.addProperty("authToken", authToken);
-		config.addProperty("gameVersion", gameVersion);
 		config.add("alwaysOverrideFiles", GSON.toJsonTree(alwaysOverrideFiles));
 
 		try(FileWriter writer = new FileWriter(Updater.USER_CONFIG_FILE)) {
@@ -57,8 +54,7 @@ public class Config {
 
 	public static boolean shouldAskForProject() {
 		return projectId == null || projectId.isEmpty()
-				|| authToken == null || authToken.isEmpty()
-				|| gameVersion == null || gameVersion.isEmpty();
+				|| authToken == null || authToken.isEmpty();
 	}
 
 }

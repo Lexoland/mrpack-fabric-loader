@@ -1,6 +1,8 @@
 package dev.lexoland.updater.config;
 
 import java.awt.*;
+import java.awt.event.KeyAdapter;
+import java.awt.event.KeyEvent;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
@@ -33,7 +35,7 @@ public class ProjectSelectionWindow extends JFrame {
 	private JTextField projectIdField;
 	private JPasswordField authTokenField;
 
-	public ProjectSelectionWindow(EnvType envType, Runnable onFinish) {
+	public ProjectSelectionWindow(EnvType envType, String gameVersion, Runnable onFinish) {
 		super("Select Modrinth Pack");
 
 		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
@@ -42,6 +44,16 @@ public class ProjectSelectionWindow extends JFrame {
 		root.setLayout(new GridBagLayout());
 		root.setBorder(new EmptyBorder(5, 5, 5, 5));
 		setContentPane(root);
+
+
+		KeyAdapter enterListener = new KeyAdapter() {
+			@Override
+			public void keyPressed(KeyEvent e) {
+				if (e.getKeyCode() == KeyEvent.VK_ENTER)
+					ok(root, envType, gameVersion, onFinish);
+			}
+		};
+
 
 		GridBagConstraints c = new GridBagConstraints();
 
@@ -55,6 +67,7 @@ public class ProjectSelectionWindow extends JFrame {
 		c.gridx = 1;
 		c.fill = GridBagConstraints.HORIZONTAL;
 		projectIdField = new JTextField(Config.projectId, 20);
+		projectIdField.addKeyListener(enterListener);
 		root.add(projectIdField, c);
 
 
@@ -67,6 +80,7 @@ public class ProjectSelectionWindow extends JFrame {
 		c.gridx = 1;
 		c.fill = GridBagConstraints.HORIZONTAL;
 		authTokenField = new JPasswordField(Config.authToken, 20);
+		authTokenField.addKeyListener(enterListener);
 		root.add(authTokenField, c);
 
 
@@ -83,7 +97,7 @@ public class ProjectSelectionWindow extends JFrame {
 		buttonPanel.add(cancelButton);
 
 		JButton okButton = new JButton("OK");
-		okButton.addActionListener(e -> ok(root, envType, onFinish));
+		okButton.addActionListener(e -> ok(root, envType, gameVersion, onFinish));
 		buttonPanel.add(okButton);
 
 		root.add(buttonPanel, c);
@@ -93,7 +107,12 @@ public class ProjectSelectionWindow extends JFrame {
 		setMinimumSize(getSize());
 	}
 
-	private void ok(JPanel root, EnvType envType, Runnable onFinish) {
+	private void ok(JPanel root, EnvType envType, String gameVersion, Runnable onFinish) {
+		if (projectIdField.getText().isEmpty()) {
+			error("Please enter a project slug/id.");
+			return;
+		}
+
 		setPanelEnabled(root, false);
 
 		new Thread(() -> {
@@ -102,19 +121,26 @@ public class ProjectSelectionWindow extends JFrame {
 
 			try {
 				HashSet<String> gameVersions = fetchProjectVersions();
+
 				if (gameVersions == null) {
 					error("Project not found or not authorized to access project.");
 					setPanelEnabled(root, true);
 					return;
 				}
-				if (gameVersions.isEmpty()) {
-					error("Project has no versions available for fabric.");
+
+				if (!gameVersions.contains(gameVersion)) {
+					error("Project has no versions available for mc" + gameVersion + " using fabric loader.");
 					setPanelEnabled(root, true);
 					return;
 				}
+
 				dispose();
-				GameVersionSelectionWindow window = new GameVersionSelectionWindow(gameVersions, getMinimumSize(), envType, onFinish);
-				window.setVisible(true);
+
+				Config.save();
+				dispose();
+
+				new Thread(() -> Updater.start(envType, gameVersion, onFinish))
+						.start();
 			} catch (IOException ex) {
 				Log.error(LogCategory.UPDATER, "Failed to fetch project versions", ex);
 				error("Something went wrong while fetching project versions. See logs for more information.");
