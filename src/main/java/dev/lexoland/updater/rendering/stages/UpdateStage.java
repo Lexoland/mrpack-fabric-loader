@@ -187,9 +187,5 @@ public class UpdateStage {
 					PROGRESS_BAR_HEIGHT - (int) (PROGRESS_BAR_STROKE_WIDTH * 2)
 			);
 		}
-
-		private double lerp(float delta, double start, double end) {
-			return start + delta * (end - start);
-		}
 	}
 }

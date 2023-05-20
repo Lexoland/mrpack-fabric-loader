@@ -27,7 +27,6 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
 import dev.lexoland.updater.config.Config;
-import dev.lexoland.updater.config.ProjectSelectionWindow;
 import dev.lexoland.updater.rendering.UpdateRenderer;
 import dev.lexoland.updater.rendering.UpdateWindow;
 import dev.lexoland.updater.rendering.stages.CreateBackupStage;
@@ -108,7 +107,7 @@ public class Updater {
 		this.client = createHttpClient(authToken);
 	}
 
-	public void checkForUpdates() {
+	public void checkForUpdates(Runnable onFinish) {
 		loadPreviousInstallationInfo();
 		String currentVersionNumber = previousInstallationInfo.versionNumber;
 
@@ -140,7 +139,7 @@ public class Updater {
 			}
 			Log.info(LogCategory.UPDATER, "New version found: %s", newVersionNumber);
 
-			UpdateWindow.open();
+			UpdateWindow.open(environment, gameVersion, onFinish);
 
 			needsCleanup = true;
 			createBackup();
@@ -571,8 +570,7 @@ public class Updater {
 		Config.load();
 
 		if (Config.shouldAskForProject()) {
-			ProjectSelectionWindow window = new ProjectSelectionWindow(envType, gameVersion, onFinish);
-			window.setVisible(true);
+			UpdateWindow.open(envType, gameVersion, onFinish);
 			return;
 		}
 		start(envType, gameVersion, onFinish);
@@ -580,7 +578,7 @@ public class Updater {
 
 	public static void start(EnvType envType, String gameVersion, Runnable onFinish) {
 		instance = new Updater(Config.projectId, gameVersion, Config.authToken, Config.alwaysOverrideFiles, envType);
-		instance.checkForUpdates();
+		instance.checkForUpdates(onFinish);
 		if (instance.startGame)
 			onFinish.run();
 	}
