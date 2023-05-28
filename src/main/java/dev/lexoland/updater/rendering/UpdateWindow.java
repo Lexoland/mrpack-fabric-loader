@@ -1,31 +1,38 @@
 package dev.lexoland.updater.rendering;
 
-import dev.lexoland.updater.Updater;
+import dev.lexoland.updater.config.Config;
 
-import javax.swing.*;
+import net.fabricmc.api.EnvType;
 
 import java.awt.*;
-import java.awt.event.WindowAdapter;
-import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 
+import javax.swing.*;
+
 public class UpdateWindow extends JFrame {
 
 	private static UpdateWindow instance;
 
-	private UpdateWindow() {
+	private UpdateWindow(EnvType envType, String gameVersion, Runnable onFinish) {
 		super("Updating...");
 		setSize(600, 350);
 		setResizable(false);
-		setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
 		setLocationRelativeTo(null);
-		add(new UpdateRenderer());
+		setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+
+		boolean shouldAskForProject = Config.shouldAskForProject();
+		if(shouldAskForProject)
+			setTitle("Project Selection");
+		
+		add(new UpdateRenderer(shouldAskForProject, envType, gameVersion, onFinish, () -> setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE)));
 	}
 
-	public static void open() {
+	public static void open(EnvType envType, String gameVersion, Runnable onFinish) {
+		if(instance != null)
+			return;
 		List<String> fonts = new ArrayList<>();
 		fonts.add("MinecraftRegular.otf");
 		fonts.add("MinecraftBold.otf");
@@ -41,7 +48,7 @@ public class UpdateWindow extends JFrame {
 			throw new Error("Failed to load fonts", e);
 		}
 
-		instance = new UpdateWindow();
+		instance = new UpdateWindow(envType, gameVersion, onFinish);
 		instance.setVisible(true);
 
 		new Thread(() -> {
@@ -49,7 +56,7 @@ public class UpdateWindow extends JFrame {
 				instance.repaint();
 				Toolkit.getDefaultToolkit().sync();
 			}
-		}).start();
+		}, "Render-Thread").start();
 	}
 
 	public static UpdateWindow getInstance() {
