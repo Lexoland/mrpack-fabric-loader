@@ -8,10 +8,12 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Enumeration;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
 import java.util.zip.ZipEntry;
@@ -35,6 +37,8 @@ import dev.lexoland.updater.rendering.stages.DownloadPackMetaStage;
 import dev.lexoland.updater.rendering.stages.ExtractOverridesStage;
 import dev.lexoland.updater.rendering.stages.FinishUpStage;
 import dev.lexoland.updater.rendering.stages.RestoreBackupStage;
+import okhttp3.Call;
+import okhttp3.Callback;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
@@ -44,6 +48,8 @@ import okhttp3.ResponseBody;
 import net.fabricmc.api.EnvType;
 import net.fabricmc.loader.impl.util.log.Log;
 import net.fabricmc.loader.impl.util.log.LogCategory;
+
+import org.jetbrains.annotations.NotNull;
 
 import javax.swing.*;
 
@@ -156,7 +162,7 @@ public class Updater {
 			String fileName = file.get("filename").getAsString();
 			String downloadUrl = file.get("url").getAsString();
 
-			downloadFile(fileName, HttpUrl.get(downloadUrl), PACK_FILE, true);
+			new PendingDownload(fileName, PACK_FILE, HttpUrl.get(downloadUrl)).download();
 			downloadPackFiles();
 			extractOverrides();
 
@@ -182,51 +188,6 @@ public class Updater {
 		}
 	}
 
-
-	private void downloadFile(String fileName, HttpUrl downloadUrl, File destination, boolean meta) throws IOException {
-		Log.info(LogCategory.UPDATER, "Downloading '%s'...", fileName);
-		entryName = fileName;
-		downloaded = 0;
-
-		File parent = destination.getParentFile();
-		if (parent != null && !parent.exists())
-			parent.mkdirs();
-
-		Request request = new Request.Builder()
-				.url(downloadUrl)
-				.get()
-				.build();
-
-		try (Response response = client.newCall(request).execute()) {
-			if (!response.isSuccessful())
-				throw new IOException("Unexpected response code " + response);
-
-			ResponseBody body = response.body();
-			downloadSize = body.contentLength();
-
-			InputStream in = body.byteStream();
-			FileOutputStream out = new FileOutputStream(destination);
-
-			byte[] buffer = new byte[1024];
-			int read;
-
-			while ((read = in.read(buffer, 0, 1024)) != -1) {
-				out.write(buffer, 0, read);
-				downloaded += read;
-				downloadSpeedCounter += read;
-
-				long now = System.currentTimeMillis();
-				if(now - downloadSpeedTimestamp > 1000) {
-					downloadSpeedTimestamp = now;
-					downloadSpeed = downloadSpeedCounter;
-					downloadSpeedCounter = 0;
-				}
-			}
-
-			out.close();
-		}
-	}
-
 	private void downloadPackFiles() throws IOException {
 		Log.info(LogCategory.UPDATER, "Downloading pack files...");
 
@@ -237,6 +198,8 @@ public class Updater {
 
 		totalEntries = files.size();
 		currentEntry = 0;
+
+		List<PendingDownload> pendingDownloads = new ArrayList<>();
 
 		for (JsonElement element : files) {
 			JsonObject file = element.getAsJsonObject();
@@ -280,8 +243,124 @@ public class Updater {
 			}
 
 			markAsInstalled(destination);
-			downloadFile(destination.getName(), downloadUrl, destination, false);
+			pendingDownloads.add(new PendingDownload(destination.getName(), destination, downloadUrl));
+		}
+
+		final int prepareDepth = 3;
+
+		for (int i = 0; i < prepareDepth; i++) {
+			if(i >= pendingDownloads.size())
+				break;
+			PendingDownload pendingDownload = pendingDownloads.get(i);
+			pendingDownload.prepare();
+		}
+
+		for (int i = 0; i < pendingDownloads.size(); i++) {
+			PendingDownload pendingDownload = pendingDownloads.get(i);
+			PendingDownload nextPendingDownload = i + prepareDepth < pendingDownloads.size() ? pendingDownloads.get(i + prepareDepth) : null;
+			if (nextPendingDownload != null)
+				nextPendingDownload.prepare();
+			pendingDownload.download();
 			currentEntry++;
+		}
+	}
+
+	private class PendingDownload {
+		private final String fileName;
+		private final File destination;
+		private final HttpUrl downloadUrl;
+
+		private boolean prepared = false;
+
+		private ResponseBody responseBody;
+
+		public PendingDownload(String fileName, File destination, HttpUrl downloadUrl) {
+			this.fileName = fileName;
+			this.destination = destination;
+			this.downloadUrl = downloadUrl;
+		}
+
+		public void prepare() {
+			File parent = destination.getParentFile();
+			if (parent != null && !parent.exists())
+				parent.mkdirs();
+
+			Request request = new Request.Builder()
+					.url(downloadUrl)
+					.get()
+					.build();
+
+			final int retries = 5;
+			AtomicInteger atomicRetries = new AtomicInteger(retries);
+			client.newCall(request).enqueue(new Callback() {
+				@Override
+				public void onFailure(@NotNull Call call, @NotNull IOException e) {
+					synchronized (PendingDownload.this) {
+						Log.error(LogCategory.UPDATER, "Failed to download '%s'", fileName, e);
+						if (atomicRetries.decrementAndGet() > 0) {
+							Log.info(LogCategory.UPDATER, "Retrying download of '%s'...", fileName);
+							client.newCall(request).enqueue(this);
+						} else {
+							Log.error(LogCategory.UPDATER, "Failed to download '%s' after %s retries", fileName, retries);
+							PendingDownload.this.notifyAll();
+						}
+					}
+				}
+
+				@Override
+				public void onResponse(@NotNull Call call, @NotNull Response response) throws IOException {
+					if (!response.isSuccessful())
+						throw new IOException("Unexpected response code " + response);
+
+					responseBody = response.body();
+					synchronized (PendingDownload.this) {
+						Log.info(LogCategory.UPDATER, "Got response for file '%s'", fileName);
+						PendingDownload.this.notifyAll();
+					}
+				}
+			});
+			prepared = true;
+		}
+
+		public void download() throws IOException {
+			if (!prepared)
+				prepare();
+
+			if(responseBody == null) {
+				Log.info(LogCategory.UPDATER, "Waiting for file '%s'...", fileName);
+				synchronized (this) {
+					try {
+						this.wait();
+					} catch (InterruptedException e) {
+						throw new RuntimeException(e);
+					}
+				}
+			}
+			if(responseBody == null)
+				return;
+			Log.info(LogCategory.UPDATER, "Downloading '%s'...", fileName);
+			entryName = fileName;
+			downloaded = 0;
+			downloadSize = responseBody.contentLength();
+
+			InputStream in = responseBody.byteStream();
+			try (FileOutputStream out = new FileOutputStream(destination)) {
+				byte[] buffer = new byte[1024];
+				int read;
+
+				while ((read = in.read(buffer, 0, 1024)) != -1) {
+					out.write(buffer, 0, read);
+					downloaded += read;
+					downloadSpeedCounter += read;
+
+					long now = System.currentTimeMillis();
+					if (now - downloadSpeedTimestamp > 1000) {
+						downloadSpeedTimestamp = now;
+						downloadSpeed = downloadSpeedCounter;
+						downloadSpeedCounter = 0;
+					}
+				}
+			}
 		}
 	}
 
@@ -585,6 +664,7 @@ public class Updater {
 
 	public static OkHttpClient createHttpClient(String authToken) {
 		return new OkHttpClient.Builder()
+				.readTimeout(Duration.ZERO)
 				.addInterceptor(chain -> {
 					Request.Builder builder = chain.request().newBuilder()
 							.addHeader("User-Agent", "Lexoland/mrpack-fabric-loader");
