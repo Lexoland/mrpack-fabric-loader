@@ -39,6 +39,30 @@
       {
         "name": "org.ow2.asm:asm-util:9.5",
         "url": "https://maven.fabricmc.net/"
+      },
+      {
+        "name": "com.squareup.okhttp3:okhttp:4.11.0",
+        "url": "https://repo.maven.apache.org/maven2/"
+      },
+      {
+        "name": "org.jetbrains.kotlin:kotlin-stdlib:1.8.21",
+        "url": "https://repo.maven.apache.org/maven2/"
+      },
+      {
+        "name": "org.jetbrains.kotlin:kotlin-stdlib-jdk8:1.8.21",
+        "url": "https://repo.maven.apache.org/maven2/"
+      },
+      {
+        "name": "com.squareup.okio:okio:3.3.0",
+        "url": "https://repo.maven.apache.org/maven2/"
+      },
+      {
+        "name": "com.squareup.okio:okio-jvm:3.3.0",
+        "url": "https://repo.maven.apache.org/maven2/"
+      },
+      {
+        "name": "com.google.guava:guava:31.1-jre",
+        "url": "https://repo.maven.apache.org/maven2/"
       }
     ],
     "server": [
