@@ -1,11 +1,11 @@
-package dev.lexoland.updater.rendering;
+package dev.lexoland.updating.rendering;
 
 import java.awt.*;
 
 import javax.swing.*;
 
-import dev.lexoland.updater.rendering.stages.ProjectSelectionStage;
-import dev.lexoland.updater.rendering.stages.UpdateStage;
+import dev.lexoland.updating.rendering.stages.ProjectSelectionStage;
+import dev.lexoland.updating.rendering.stages.UpdateStage;
 
 import net.fabricmc.api.EnvType;
 

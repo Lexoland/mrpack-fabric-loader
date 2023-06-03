@@ -1,4 +1,6 @@
-package dev.lexoland.updater;
+package dev.lexoland.updating;
+
+import dev.lexoland.updating.updater.Updater;
 
 import net.fabricmc.api.EnvType;
 

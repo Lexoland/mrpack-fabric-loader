@@ -1,6 +1,6 @@
-package dev.lexoland.updater.rendering.stages;
+package dev.lexoland.updating.rendering.stages;
 
-import dev.lexoland.updater.Updater;
+import dev.lexoland.updating.updater.Updater;
 
 import java.awt.*;
 

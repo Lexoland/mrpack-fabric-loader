@@ -1,4 +1,4 @@
-package dev.lexoland.updater.rendering.stages;
+package dev.lexoland.updating.rendering.stages;
 
 import java.awt.*;
 import java.awt.event.KeyAdapter;
@@ -16,12 +16,13 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
-import dev.lexoland.updater.Updater;
-import dev.lexoland.updater.config.Config;
-import dev.lexoland.updater.rendering.UpdateRenderer;
+import dev.lexoland.updating.updater.DownloadHandler;
+import dev.lexoland.updating.updater.Updater;
+import dev.lexoland.updating.config.Config;
+import dev.lexoland.updating.rendering.UpdateRenderer;
 
-import dev.lexoland.updater.rendering.UpdateWindow;
-import dev.lexoland.updater.rendering.utils.Direction;
+import dev.lexoland.updating.rendering.UpdateWindow;
+import dev.lexoland.updating.rendering.utils.Direction;
 
 import net.fabricmc.api.EnvType;
 import net.fabricmc.loader.impl.util.log.Log;
@@ -85,6 +86,7 @@ public class ProjectSelectionStage extends UpdateStage {
 		c.gridy = 2;
 		c.fill = GridBagConstraints.HORIZONTAL;
 		projectIdField = new JTextField(Config.projectId, 20);
+		projectIdField.setCaretPosition(projectIdField.getText().length());
 		projectIdField.setForeground(Color.WHITE);
 		projectIdField.setBackground(DEFAULT_PRIMARY_BACKGROUND_COLOR);
 		projectIdField.setCaretColor(Color.WHITE);
@@ -193,7 +195,7 @@ public class ProjectSelectionStage extends UpdateStage {
 	}
 
 	private HashSet<String> fetchProjectVersions() throws IOException {
-		OkHttpClient client = Updater.createHttpClient(Config.authToken);
+		OkHttpClient client = DownloadHandler.createHttpClient(Config.authToken);
 
 		Request request = new Request.Builder()
 				.url(Updater.MR_ENDPOINT + "/project/" + Config.projectId + "/version")

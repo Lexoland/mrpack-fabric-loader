@@ -1,4 +1,4 @@
-package dev.lexoland.updater.rendering.utils;
+package dev.lexoland.updating.rendering.utils;
 
 public enum Direction {
 	NORTH(0, 1),

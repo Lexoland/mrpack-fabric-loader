@@ -1,4 +1,4 @@
-package dev.lexoland.updater.config;
+package dev.lexoland.updating.config;
 
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -9,7 +9,7 @@ import java.util.List;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.reflect.TypeToken;
-import dev.lexoland.updater.Updater;
+import dev.lexoland.updating.updater.Updater;
 
 public class Config {
 

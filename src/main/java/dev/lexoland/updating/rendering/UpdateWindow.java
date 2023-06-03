@@ -1,6 +1,6 @@
-package dev.lexoland.updater.rendering;
+package dev.lexoland.updating.rendering;
 
-import dev.lexoland.updater.config.Config;
+import dev.lexoland.updating.config.Config;
 
 import net.fabricmc.api.EnvType;
 
