@@ -53,8 +53,6 @@ public class Updater {
 			"gitlab.com"
 	);
 
-	private static Updater instance;
-
 
 	private final BackupHandler backupHandler;
 	private final DownloadHandler downloadHandler;
@@ -377,13 +375,9 @@ public class Updater {
 	}
 
 	public static void start(EnvType envType, String gameVersion, Runnable onFinish) {
-		instance = new Updater(Config.projectId, gameVersion, Config.authToken, Config.alwaysOverrideFiles, envType);
+		Updater instance = new Updater(Config.projectId, gameVersion, Config.authToken, Config.alwaysOverrideFiles, envType);
 		instance.checkForUpdates(onFinish);
 		if (instance.startGame)
 			onFinish.run();
-	}
-
-	public static Updater getInstance() {
-		return instance;
 	}
 }

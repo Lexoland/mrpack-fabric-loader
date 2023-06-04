@@ -1,7 +1,5 @@
 package dev.lexoland.updating.updater;
 
-import static dev.lexoland.updating.updater.Updater.GSON;
-
 import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
@@ -21,10 +19,10 @@ import com.google.gson.reflect.TypeToken;
 import net.fabricmc.loader.impl.util.log.Log;
 import net.fabricmc.loader.impl.util.log.LogCategory;
 
+import static dev.lexoland.updating.updater.Updater.*;
+
 public class BackupHandler {
 
-	private static final File UPDATER_DIR = Updater.UPDATER_DIR;
-	private static final File PACK_FILE = Updater.PACK_FILE;
 	private static final File BACKUP_FILE = new File(UPDATER_DIR, "backup.zip");
 	private static final File INSTALLATION_INFO_FILE = new File(UPDATER_DIR, "installation-info.json");
 

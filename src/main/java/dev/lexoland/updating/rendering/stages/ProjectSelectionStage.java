@@ -110,6 +110,7 @@ public class ProjectSelectionStage extends UpdateStage {
 		c.gridy = 4;
 		c.fill = GridBagConstraints.HORIZONTAL;
 		authTokenField = new JPasswordField(Config.authToken, 20);
+		projectIdField.setCaretPosition(authTokenField.getPassword().length);
 		authTokenField.setForeground(Color.WHITE);
 		authTokenField.setBackground(DEFAULT_PRIMARY_BACKGROUND_COLOR);
 		authTokenField.setCaretColor(Color.WHITE);

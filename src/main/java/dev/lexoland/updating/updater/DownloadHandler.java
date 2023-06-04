@@ -6,17 +6,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.time.Duration;
 import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Queue;
-import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.SynchronousQueue;
 
 import okhttp3.Call;
 import okhttp3.Callback;
-import okhttp3.Dispatcher;
 import okhttp3.HttpUrl;
 import okhttp3.OkHttpClient;
 import okhttp3.Protocol;
@@ -34,7 +28,7 @@ public class DownloadHandler {
 
 	private final OkHttpClient client;
 
-	private BlockingQueue<FileDownload> fileDownloads;
+	private final BlockingQueue<FileDownload> fileDownloads = new LinkedBlockingQueue<>();
 
 	private FileDownload currentDownload;
 
@@ -97,7 +91,6 @@ public class DownloadHandler {
 		if (downloading)
 			throw new IllegalStateException("Already downloading");
 		downloading = true;
-		fileDownloads = new LinkedBlockingQueue<>(enqueued);
 		while (enqueued > 0 || !fileDownloads.isEmpty()) {
 			try {
 				currentDownload = fileDownloads.take();
@@ -108,6 +101,7 @@ public class DownloadHandler {
 			}
 		}
 		downloading = false;
+		enqueued = 0;
 	}
 
 	FileDownload currentDownload() {
